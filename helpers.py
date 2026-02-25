@@ -1,4 +1,5 @@
 from math import log, sqrt, exp
+from typing import Tuple
 import numpy as np
 import warnings
 from scipy.stats import norm
@@ -7,7 +8,7 @@ n = norm.pdf
 N = norm.cdf
 
 ### BLACK SCHOLES HELPERS ###
-def blackScholesCallPriceDelta(S, K, r, q, sigma, tau):
+def blackScholesCallPriceDelta(S : float, K : float, r : float, q : float, sigma : float, tau : float) -> Tuple[float, float]:
     """
         Calculates Black Scholes price and delta.
 

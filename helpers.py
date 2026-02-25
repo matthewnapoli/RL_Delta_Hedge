@@ -1,14 +1,14 @@
 from math import log, sqrt, exp
-from typing import Tuple
 import numpy as np
 import warnings
 from scipy.stats import norm
+from typing import Union, Optional
 
 n = norm.pdf
 N = norm.cdf
 
 ### BLACK SCHOLES HELPERS ###
-def blackScholesCallPriceDelta(S : float, K : float, r : float, q : float, sigma : float, tau : float) -> Tuple[float, float]:
+def blackScholesCallPriceDelta(S: float, K: float, r: float, q: float, sigma: float, tau: float) -> tuple[float, float]:
     """
         Calculates Black Scholes price and delta.
 
@@ -36,7 +36,7 @@ def blackScholesCallPriceDelta(S : float, K : float, r : float, q : float, sigma
     delta = exp(-q * tau) * N(d1)
     return price, delta
 
-def nextPriceGBM(Scurr, mu, sigma, dt, rng):
+def nextPriceGBM(Scurr: Union[float, np.ndarray], mu: float, sigma: float, dt: float, rng: np.random.Generator) -> Union[float, np.ndarray]:
     """
         Generates and returns the next price under Geometric Brownian Motion (GBM) dynamics, given current price and time step.
 
@@ -50,7 +50,7 @@ def nextPriceGBM(Scurr, mu, sigma, dt, rng):
     Snext = Scurr * np.exp((mu - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * Z)
     return Snext
 
-def brownianPricePathsSimulation(paths, periods, S0, mu, sigma, dt, rng=None):
+def brownianPricePathsSimulation(paths: int, periods: int, S0: float, mu: float, sigma: float, dt: float, rng: Optional[np.random.Generator] = None) -> np.ndarray:
     """
         Monte Carlo simulation of underyling's price paths.
 
@@ -61,7 +61,8 @@ def brownianPricePathsSimulation(paths, periods, S0, mu, sigma, dt, rng=None):
         sigma: volatility (annualized SD(asset returns))
         dt: time step
     """
-    if rng is None: rng = np.random.default_rng()
+    if rng is None: 
+        rng = np.random.default_rng()
 
     pricePaths = np.zeros((paths, periods))
     pricePaths[:, 0] = S0
@@ -69,7 +70,7 @@ def brownianPricePathsSimulation(paths, periods, S0, mu, sigma, dt, rng=None):
         pricePaths[:, t+1] = nextPriceGBM(pricePaths[:, t], mu, sigma, dt, rng)
     return pricePaths
 
-def markovRegimeTransition(currentState, P, rng):
+def markovRegimeTransition(currentState: int, P: np.ndarray, rng: np.random.Generator) -> int:
     """
         Randomly chooses the next state in the Markov chain, given the current state and transition matrix
 
@@ -80,7 +81,7 @@ def markovRegimeTransition(currentState, P, rng):
     nextState = rng.choice(P.shape[0], p=P[currentState])
     return int(nextState)
 
-def stationaryDistribution(P, tol=1e-12, maxIterations=100000):
+def stationaryDistribution(P: np.ndarray, tol: float = 1e-12, maxIterations: int = 100000) -> np.ndarray:
     """
         Uses Power (Iteration) Method to calculate the steady state of the given 3 by 3 transition matrix
         The steady state is the long-run probability of being each of the states in the transition matrix

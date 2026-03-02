@@ -1,6 +1,7 @@
 import numpy as np
 from hedgingEnvironment import hedgingEnvironment
 from typing import Literal, Optional, Tuple, Any
+from datetime import datetime, timedelta
 from dataclasses import dataclass
 
 DEFAULTREGIMETRANSITION = np.array([[0.93, 0.07, 0.00],   # abundant -> abundant/normal
@@ -23,8 +24,24 @@ class EnvSpec:
     kappaMode: Literal["paper", "stochastic"] = "paper"
 
     # paper grid controls
-    maturity: Literal["1m", "3m"] = "1m"
-    rebalancingFrequency: Literal["weekly", "3d", "2d", "daily"] = "daily"
+
+
+    # MAKE REALISTIC
+    maturity: timedelta = timedelta(days=250)
+    rebalancingFrequency: timedelta = timedelta(days=5)
+
+    one_day = timedelta(days=1)
+
+    if maturity % one_day != timedelta(0):
+        raise ValueError("maturity must be a multiple of 1 day")
+
+    if rebalancingFrequency % one_day != timedelta(0):
+        raise ValueError("rebalancingFrequency must be a multiple of 1 day")
+
+    if 10 * rebalancingFrequency > maturity:
+        raise ValueError("maturity must be at least 10 times rebalancing frequency to have enough steps for learning")
+    
+    steps = maturity // rebalancingFrequency
 
     # shared parameters
     S0: float = 100
@@ -49,26 +66,6 @@ class EnvSpec:
 
     data: Any = None
 
-def convertTimeSteps(maturity, rebalancingFrequency):
-    """
-        Converts (maturity, rebalancing frequency) into (T in years, N steps)
-        Uses mapping: 1 month = 21 trading days, 3 months = 63 trading days
-    """
-    if maturity == "1m":
-        T = 21 / 252
-        stepsMap = {"weekly": 4, "3d": 7, "2d": 10, "daily": 21}
-    elif maturity == "3m":
-        T = 63 / 252
-        stepsMap = {"weekly": 13, "3d": 21, "2d": 31, "daily": 63}
-    else:
-        raise ValueError("maturity must be '1m' or '3m'")
-
-    if rebalancingFrequency not in stepsMap:
-        raise ValueError("Rebalancing frequency must be one of: 'weekly','3d','2d','daily'")
-
-    return T, stepsMap[rebalancingFrequency]
-
-
 def makeEnvironment(spec: EnvSpec, seed: int = 0) -> hedgingEnvironment:
     """
         Factory to create a HedgingEnvironment from a specification.
@@ -78,7 +75,6 @@ def makeEnvironment(spec: EnvSpec, seed: int = 0) -> hedgingEnvironment:
         - spec.kappaMode = "stochastic": regime switching (P = spec.PStoch or env default), kappaLevels=spec.kappaLevelsStoch
     """
     rng = np.random.default_rng(seed)
-    T, steps = convertTimeSteps(spec.maturity, spec.rebalancingFrequency)
 
     if spec.kappaMode == "paper":
         kappaLevels = [spec.kappaPaper, spec.kappaPaper, spec.kappaPaper]
@@ -95,7 +91,7 @@ def makeEnvironment(spec: EnvSpec, seed: int = 0) -> hedgingEnvironment:
     else:
         raise ValueError("kappaMode must be 'paper' or 'stochastic'")
 
-    env = hedgingEnvironment(S0=spec.S0, K=spec.K, T=T, steps=steps, r=spec.r, q=spec.q, mu=spec.mu, sigma=spec.sigma,
+    env = hedgingEnvironment(S0=spec.S0, K=spec.K, T=spec.maturity, steps=spec.steps, r=spec.r, q=spec.q, mu=spec.mu, sigma=spec.sigma,
                              sigmaValuation=spec.sigmaValuation, options=1, Hmin=spec.Hmin, Hmax=spec.Hmax,
                              kappaLevels=kappaLevels, P=P, startingRegime=startingRegime, rng=rng,
                              startFromStationary=startFromStationary, burnin=burnin)

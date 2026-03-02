@@ -59,6 +59,8 @@ class EnvSpec:
 
     # stochastic kappa (regime-based)
     kappaLevelsStoch: Tuple[float, float, float] = (0.002, 0.01, 0.025)
+
+    
     PStoch: Optional[np.ndarray] = None
     startFromStationary: bool = True
     burnin: int = 50

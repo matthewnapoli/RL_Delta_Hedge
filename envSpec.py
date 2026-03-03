@@ -14,19 +14,9 @@ DEFAULTREGIMETRANSITION = np.array([[0.93, 0.07, 0.00],   # abundant -> abundant
 class EnvSpec:
     """
         Specification for building a hedging environment
-
-        Attributes correspond to the environment parameters and choices of transaction cost regime
-        Two modes are supported:
-            - "static" for constant transaction costs
-            - "stochastic" for regime‑switching transaction costs
     """
-    # toggle
-    trnscostMode: Literal["static", "stochastic"] = "static"
 
-    # static grid controls
-
-
-    # MAKE REALISTIC
+    # MAKE MORE REALISTIC
     maturity: timedelta = timedelta(days=250)
     rebalancingFrequency: timedelta = timedelta(days=5)
 
@@ -54,17 +44,8 @@ class EnvSpec:
     Hmin: float = 0.0
     Hmax: float = 1.5
 
-    # static (constant trnscost)
-    trnscostStatic: float = 0.01
-
-    # stochastic trnscost (regime-based)
-    trnscostLevelsStoch: Tuple[float, float, float] = (0.002, 0.01, 0.025)
-
-
-    PStoch: Optional[np.ndarray] = None
-    startFromStationary: bool = True
-    burnin: int = 50
-    startingRegime: int = 1
+    # transaction cost parameters
+    trnsCostFunc: Optional[callable] = lambda x: x*0.01 # linear transaction cost function (1% of trade size)
 
     data: Any = None
 
@@ -78,23 +59,7 @@ def makeEnvironment(spec: EnvSpec, seed: int = 0) -> hedgingEnvironment:
     """
     rng = np.random.default_rng(seed)
 
-    if spec.trnscostMode == "static":
-        trnscostLevels = [spec.trnscostStatic, spec.trnscostStatic, spec.trnscostStatic]
-        P = np.eye(3)
-        startFromStationary = False
-        burnin = 0
-        startingRegime = 1 # regime is permanently "normal"; regime plots will show only regime 1 — expected
-    elif spec.trnscostMode == "stochastic":
-        trnscostLevels = list(spec.trnscostLevelsStoch)
-        P = spec.PStoch if spec.PStoch is not None else DEFAULTREGIMETRANSITION
-        startFromStationary = spec.startFromStationary
-        burnin = int(spec.burnin)
-        startingRegime = int(spec.startingRegime)
-    else:
-        raise ValueError("trnscostMode must be 'static' or 'stochastic'")
-
     env = hedgingEnvironment(S0=spec.S0, K=spec.K, T=spec.maturity, steps=spec.steps, r=spec.r, q=spec.q, mu=spec.mu, 
-                             sigma=spec.sigma, sigmaValuation=spec.sigmaValuation, options=1, Hmin=spec.Hmin, Hmax=spec.Hmax,
-                             trnscostLevels=trnscostLevels, P=P, startingRegime=startingRegime, rng=rng,
-                             startFromStationary=startFromStationary, burnin=burnin)
+                             sigma=spec.sigma, sigmaValuation=spec.sigmaValuation, options=1, Hmin=spec.Hmin, 
+                             Hmax=spec.Hmax, trnsCostFunc=spec.trnsCostFunc, rng=rng)
     return env

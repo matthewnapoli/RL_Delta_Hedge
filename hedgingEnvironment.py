@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+from typing import Literal, Optional, Tuple, Any
+from datetime import datetime, timedelta
 from helpers import blackScholesCallPriceDelta, stationaryDistribution, markovRegimeTransition, nextPriceGBM
 
 KAPPASCALE = 1000
@@ -8,7 +10,7 @@ KAPPASCALE = 1000
 class hedgingEnvironment:
     """
         Discrete-time hedging environment with accounting P&L and proportional
-        transaction costs (Cao-style).
+        transaction costs.
 
         State (time i): x_i = [H_i, S_i, tau_i, z_i]
             - H_i: current hedge position (shares)
@@ -42,8 +44,12 @@ class hedgingEnvironment:
                 extra_reward = -kappa_used * | S_n * H_n |
     """
 
-    def __init__(self, S0=100, K=100, T=10/252, steps=10, r=0, q=0, mu=0, sigma=0.2, sigmaValuation=None, options=1,
-                 Hmin=0, Hmax=1.5,  kappaLevels=None, P=None, startingRegime=1, rng=None, startFromStationary=False, burnin=0):
+    def __init__(self, S0 : float =100, K : float =100, T : float = 10/252, 
+                 steps : float=10, r : float=0, q : float=0, mu : float=0, 
+                 
+                 
+                 sigma=0.2, sigmaValuation=None, options=1,
+                 Hmin=0, Hmax=1.5, trnsCostFunc=None, rng=None):
         """
             Builds a discrete-time hedging environment for a short European call with proportional
             transaction costs. Transaction costs depend on a 3-state Markov liquidity regime.
@@ -55,34 +61,32 @@ class hedgingEnvironment:
               - sigmaValuation: volatility used in Black–Scholes valuation for accounting P&L; if None, uses sigmaSimulation.
               - options: number of calls sold (positive int); portfolio holds -options * call.
               - Hmin, Hmax: bounds on hedge position (shares of underlying).
+              
               - kappaLevels: 3-element list; proportional cost rates for regimes 0/1/2.
               - P: 3x3 transition matrix for regimes (rows sum to 1). Uses a default if None.
               - startingRegime: initial regime index if startFromStationary is False.
+
               - rng: NumPy Generator for randomness.
               - startFromStationary: if True, draw initial regime from stationary distribution pi.
               - burnin: number of regime transitions applied at reset before starting the episode.
 
             State at time i is [H_i, S_i, tau_i, kappa_i] (or regime index), where tau_i = T - i*dt.
         """
-        if kappaLevels is None:
-            kappaLevels = (0.002, 0.01, 0.025) # 3-state liquidity regimes: 0=abundant, 1=normal, 2=stressed
-        if not isinstance(options, int) or options < 1:
-            raise ValueError("options must be a positive integer.")
-        if int(startingRegime) not in {0, 1, 2}:
-            raise ValueError("startingRegime must be 0, 1, or 2.")
-        if len(kappaLevels) != 3:
-            raise ValueError("kappaLevels must have length 3 for abundant/normal/stressed.")
-        if P is None:                          # default transition matrix with persistent transitions
-            P = np.array([[0.93, 0.07, 0.00],  # abundant --> abundant/normal
-                          [0.04, 0.92, 0.04],  # normal --> abundant/normal/stressed
-                          [0.00, 0.10, 0.90]   # stressed --> normal/stressed
-                         ], dtype=float)
-        else:
-            P = np.array(P, dtype=float)
-            if P.shape != (3, 3):
-                raise ValueError("P must be a 3x3 transition matrix.")
-            if not np.allclose(P.sum(axis=1), 1):
-                raise ValueError("Each row of P must sum to 1.")
+        maturity: timedelta = timedelta(days=250)
+        rebalancingFrequency: timedelta = timedelta(days=5)
+
+        one_day = timedelta(days=1)
+
+        if maturity % one_day != timedelta(0):
+            raise ValueError("maturity must be a multiple of 1 day")
+
+        if rebalancingFrequency % one_day != timedelta(0):
+            raise ValueError("rebalancingFrequency must be a multiple of 1 day")
+
+        if 10 * rebalancingFrequency > maturity:
+            raise ValueError("maturity must be at least 10 times rebalancing frequency to have enough steps for learning")
+        
+        steps = maturity // rebalancingFrequency
 
 
 
@@ -95,12 +99,14 @@ class hedgingEnvironment:
 
         self.options = int(options)
         self.dt = self.T / self.N
+
         self.Hmin, self.Hmax = float(Hmin), float(Hmax)
         self.startingRegime = int(startingRegime)
         self.kappaLevels = list(kappaLevels)
         self.P = P
         self.rng = rng if rng != None else np.random.default_rng()
         self.startFromStationary = bool(startFromStationary)
+        
         self.burnin = int(burnin)
         self.pi = stationaryDistribution(self.P)  # stationary dist of regimes
 

@@ -46,8 +46,6 @@ class hedgingEnvironment:
 
     def __init__(self, S0 : float =100, K : float =100, T : float = 10/252, 
                  steps : float=10, r : float=0, q : float=0, mu : float=0, 
-                 
-                 
                  sigma=0.2, sigmaValuation=None, options=1,
                  Hmin=0, Hmax=1.5, trnsCostFunc=None, rng=None):
         """
@@ -58,7 +56,7 @@ class hedgingEnvironment:
               - S0, K, T, steps: underlying start, strike, maturity, number of periods (N).
               - r, q: risk-free rate and dividend yield used for option mark-to-model pricing.
               - mu, sigma: drift/vol used to simulate the underlying under GBM (sigma = sigmaSimulation).
-              - sigmaValuation: volatility used in Black–Scholes valuation for accounting P&L; if None, uses sigmaSimulation.
+              - sigmaValuation: volatility used in Black-Scholes valuation for accounting P&L; if None, uses sigmaSimulation.
               - options: number of calls sold (positive int); portfolio holds -options * call.
               - Hmin, Hmax: bounds on hedge position (shares of underlying).
               
@@ -101,13 +99,7 @@ class hedgingEnvironment:
         self.dt = self.T / self.N
 
         self.Hmin, self.Hmax = float(Hmin), float(Hmax)
-        self.startingRegime = int(startingRegime)
-        self.kappaLevels = list(kappaLevels)
-        self.P = P
         self.rng = rng if rng != None else np.random.default_rng()
-        self.startFromStationary = bool(startFromStationary)
-        
-        self.burnin = int(burnin)
         self.pi = stationaryDistribution(self.P)  # stationary dist of regimes
 
 

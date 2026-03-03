@@ -267,12 +267,12 @@ class MeanStdDDPGAgent:
                 "critic1Loss": float(critic1Loss.item()), "critic2Loss": float(critic2Loss.item())}
     
 
-def trainDDPG(envFunc, agent, episodes=2000, baseSeed=0, logEvery=50, debugFirstEpisode=True, debugSteps=5, reward_scalar=1):
+def trainDDPG(env, agent, episodes=2000, baseSeed=0, logEvery=50, debugFirstEpisode=True, debugSteps=5, reward_scalar=1):
     """
         Run reinforcement learning episodes to train an agent
         This training loop handles both risk‑neutral and risk‑averse agents
 
-        envFunc: function that returns a fresh environment instance each episode
+        env: a fresh environment instance of a hedging environment (not shared across episodes to ensure fresh RNG state)
         agent: DDPGAgent
         episodes: number of episodes to roll out
         baseSeed: for reproducibility
@@ -284,7 +284,7 @@ def trainDDPG(envFunc, agent, episodes=2000, baseSeed=0, logEvery=50, debugFirst
 
     # for ep in tqdm(range(episodes)):
     for ep in range(episodes):
-        env = envFunc()
+        env = env
         env.rng = np.random.default_rng(baseSeed + ep)
         state, r0 = env.reset()
         done = False

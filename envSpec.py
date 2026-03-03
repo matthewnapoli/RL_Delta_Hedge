@@ -17,13 +17,13 @@ class EnvSpec:
 
         Attributes correspond to the environment parameters and choices of transaction cost regime
         Two modes are supported:
-            - "paper" for constant transaction costs
+            - "static" for constant transaction costs
             - "stochastic" for regime‑switching transaction costs
     """
     # toggle
-    kappaMode: Literal["paper", "stochastic"] = "paper"
+    trnscostMode: Literal["static", "stochastic"] = "static"
 
-    # paper grid controls
+    # static grid controls
 
 
     # MAKE REALISTIC
@@ -54,13 +54,13 @@ class EnvSpec:
     Hmin: float = 0.0
     Hmax: float = 1.5
 
-    # paper (constant kappa)
-    kappaPaper: float = 0.01
+    # static (constant trnscost)
+    trnscostStatic: float = 0.01
 
-    # stochastic kappa (regime-based)
-    kappaLevelsStoch: Tuple[float, float, float] = (0.002, 0.01, 0.025)
+    # stochastic trnscost (regime-based)
+    trnscostLevelsStoch: Tuple[float, float, float] = (0.002, 0.01, 0.025)
 
-    
+
     PStoch: Optional[np.ndarray] = None
     startFromStationary: bool = True
     burnin: int = 50
@@ -73,28 +73,28 @@ def makeEnvironment(spec: EnvSpec, seed: int = 0) -> hedgingEnvironment:
         Factory to create a HedgingEnvironment from a specification.
 
         Single environment factory
-        - spec.kappaMode = "paper": constant kappa, no regime switching (P = I), kappaLevels=[k,k,k]
-        - spec.kappaMode = "stochastic": regime switching (P = spec.PStoch or env default), kappaLevels=spec.kappaLevelsStoch
+        - spec.trnscostMode = "static": constant trnscost, no regime switching (P = I), trnscostLevels=[k,k,k]
+        - spec.trnscostMode = "stochastic": regime switching (P = spec.PStoch or env default), trnscostLevels=spec.trnscostLevelsStoch
     """
     rng = np.random.default_rng(seed)
 
-    if spec.kappaMode == "paper":
-        kappaLevels = [spec.kappaPaper, spec.kappaPaper, spec.kappaPaper]
+    if spec.trnscostMode == "static":
+        trnscostLevels = [spec.trnscostStatic, spec.trnscostStatic, spec.trnscostStatic]
         P = np.eye(3)
         startFromStationary = False
         burnin = 0
         startingRegime = 1 # regime is permanently "normal"; regime plots will show only regime 1 — expected
-    elif spec.kappaMode == "stochastic":
-        kappaLevels = list(spec.kappaLevelsStoch)
+    elif spec.trnscostMode == "stochastic":
+        trnscostLevels = list(spec.trnscostLevelsStoch)
         P = spec.PStoch if spec.PStoch is not None else DEFAULTREGIMETRANSITION
         startFromStationary = spec.startFromStationary
         burnin = int(spec.burnin)
         startingRegime = int(spec.startingRegime)
     else:
-        raise ValueError("kappaMode must be 'paper' or 'stochastic'")
+        raise ValueError("trnscostMode must be 'static' or 'stochastic'")
 
-    env = hedgingEnvironment(S0=spec.S0, K=spec.K, T=spec.maturity, steps=spec.steps, r=spec.r, q=spec.q, mu=spec.mu, sigma=spec.sigma,
-                             sigmaValuation=spec.sigmaValuation, options=1, Hmin=spec.Hmin, Hmax=spec.Hmax,
-                             kappaLevels=kappaLevels, P=P, startingRegime=startingRegime, rng=rng,
+    env = hedgingEnvironment(S0=spec.S0, K=spec.K, T=spec.maturity, steps=spec.steps, r=spec.r, q=spec.q, mu=spec.mu, 
+                             sigma=spec.sigma, sigmaValuation=spec.sigmaValuation, options=1, Hmin=spec.Hmin, Hmax=spec.Hmax,
+                             trnscostLevels=trnscostLevels, P=P, startingRegime=startingRegime, rng=rng,
                              startFromStationary=startFromStationary, burnin=burnin)
     return env

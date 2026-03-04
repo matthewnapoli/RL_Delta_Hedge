@@ -4,7 +4,7 @@ import torch.optim as optim
 import torch.nn as nn
 from actor_critics import Actor, Critic, SecondMomentCritic
 from dataclasses import dataclass 
-from hedgingEnvironment import preprocessState, scaleActionToHedge, scaleHedgeToAction, KAPPASCALE
+from hedgingEnvironment import preprocessState, scaleActionToHedge, scaleHedgeToAction
 from replayBuffer import ReplayBuffer, DEVICE
 
 
@@ -24,7 +24,6 @@ class DDPGConfig:
     noiseStd: float = 0.005             # exploration noise in (scaled) action space
     noiseClip: float = 0.02             # clip noise
     hidden: int = 128                   # width of hidden layer
-    kappaScale: float = KAPPASCALE      # for preprocessState
 
 
 class DDPGAgent:
@@ -62,10 +61,10 @@ class DDPGAgent:
             If explore=True, adds Gaussian noise (clipped to [-1,1])
 
             env: for action scaling bounds
-            stateRaw: raw env state [H,S,tau,kappa]
+            stateRaw: raw env state [H,S,tau]
             explore: if True, add noise for exploration (vs exploitation)
         """
-        S = preprocessState(env, stateRaw, kappaScale=self.config.kappaScale)
+        S = preprocessState(env, stateRaw)
         St = torch.tensor(S, DEVICE=DEVICE).unsqueeze(0)
         u = float(self.actor(St).cpu().numpy()[0, 0])
 
@@ -185,7 +184,7 @@ class MeanStdDDPGAgent:
 
     @torch.no_grad()
     def selectAction(self, env, stateRaw, explore=True):
-        s = preprocessState(env, stateRaw, kappaScale=self.config.kappaScale)
+        s = preprocessState(env, stateRaw)
         st = torch.tensor(s, DEVICE=DEVICE).unsqueeze(0)
         u = float(self.actor(st).cpu().numpy()[0, 0])
 
@@ -292,7 +291,7 @@ def trainDDPG(env, agent, episodes=2000, baseSeed=0, logEvery=50, debugFirstEpis
         episodeTransactionCost = 0
         stepCount = 0
 
-        sPreInitial = preprocessState(env, state, kappaScale=agent.config.kappaScale)
+        sPreInitial = preprocessState(env, state)
         H0 = agent.selectAction(env, state, explore=True)
         state, reward0, info0 = env.applyInitialHedge(H0)
         reward0 /= reward_scalar
@@ -300,7 +299,7 @@ def trainDDPG(env, agent, episodes=2000, baseSeed=0, logEvery=50, debugFirstEpis
         episodeReward += float(reward0)
         episodeTransactionCost += float(info0.get("TotalTransactionCost", info0.get("TransactionCost", 0)))
 
-        sPostInitial = preprocessState(env, state, kappaScale=agent.config.kappaScale)
+        sPostInitial = preprocessState(env, state)
         u0 = scaleHedgeToAction(env, H0)
         agent.buffer.add(sPreInitial, np.array([u0], dtype=np.float32), np.array([reward0], dtype=np.float32), sPostInitial, False)
         agent.totalSteps += 1
@@ -314,8 +313,8 @@ def trainDDPG(env, agent, episodes=2000, baseSeed=0, logEvery=50, debugFirstEpis
             reward/=reward_scalar  # scale reward if needed (eg. for mean-std agent to keep magnitudes manageable)
 
             # 3) preprocess states for NN input
-            s = preprocessState(env, state, kappaScale=agent.config.kappaScale)
-            s2 = preprocessState(env, nextState, kappaScale=agent.config.kappaScale)
+            s = preprocessState(env, state)
+            s2 = preprocessState(env, nextState)
 
             # 4) store action in SCALED space u in [-1,1]
             u = scaleHedgeToAction(env, Hnext)

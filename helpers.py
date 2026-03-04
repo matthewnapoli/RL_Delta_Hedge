@@ -69,37 +69,3 @@ def brownianPricePathsSimulation(paths: int, periods: int, S0: float, mu: float,
     for t in range(periods - 1):
         pricePaths[:, t+1] = nextPriceGBM(pricePaths[:, t], mu, sigma, dt, rng)
     return pricePaths
-
-def markovRegimeTransition(currentState: int, P: np.ndarray, rng: np.random.Generator) -> int:
-    """
-        Randomly chooses the next state in the Markov chain, given the current state and transition matrix
-
-        currentState: {0,...,K-1}
-        P: K by K transition probability matrix
-        rng: random number generator
-    """
-    nextState = rng.choice(P.shape[0], p=P[currentState])
-    return int(nextState)
-
-def stationaryDistribution(P: np.ndarray, tol: float = 1e-12, maxIterations: int = 100000) -> np.ndarray:
-    """
-        Uses Power (Iteration) Method to calculate the steady state of the given 3 by 3 transition matrix
-        The steady state is the long-run probability of being each of the states in the transition matrix
-
-        P: transition matrix
-        tol: tolerance around convergence
-        maxIterations: maximum number of iterations if no convergence
-    """
-    P = np.asarray(P, dtype=float)
-    if P.ndim != 2 or P.shape[0] != P.shape[1]:
-        raise ValueError("P must be a square matrix.")
-
-    p = np.ones(P.shape[0], dtype=float) / P.shape[0]
-    for _ in range(maxIterations):
-        pNext = p @ P
-        if np.max(np.abs(pNext - p)) < tol:
-            pNext = pNext / pNext.sum()
-            return pNext
-        p = pNext
-    warnings.warn("stationaryDistribution: did not converge within maxIterations.")
-    return p / p.sum()

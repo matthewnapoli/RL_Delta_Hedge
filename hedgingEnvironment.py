@@ -4,8 +4,6 @@ from typing import Literal, Optional, Tuple, Any
 from datetime import datetime, timedelta
 from helpers import blackScholesCallPriceDelta, stationaryDistribution, markovRegimeTransition, nextPriceGBM
 
-KAPPASCALE = 1000
-
 class hedgingEnvironment:
     def __init__(self, 
                  S0 : float             = 100.0, 
@@ -264,10 +262,9 @@ def runEpisode(env, policyFunction, seed=0, reward_scaling_factor=1):
     done = False
     while not done:
         Hprev = float(state[0])
-
         Hnext = float(policyFunction(env, state))
+
         nextState, reward, done, info = env.step(Hnext)
-        
         totalReward += float(reward)
 
         tc = float(info.get("TotalTransactionCost", info.get("TransactionCost", 0.0)))
@@ -321,7 +318,7 @@ def evaluatePolicy(env, policyFunction, episodes=300, c=1.5, baseSeed=0):
                "meanTimeFractionRegime0": frac0, "meanTimeFractionRegime1": frac1, "meanTimeFractionRegime2": frac2}
     return summary, df
 
-def preprocessState(env, state, kappaScale=KAPPASCALE):
+def preprocessState(env, state):
     """
         Normalize the raw state for neural network input.
 
@@ -333,7 +330,6 @@ def preprocessState(env, state, kappaScale=KAPPASCALE):
 
         env: environment object
         state: state vector
-        kappaScale: scalar to scale kappa up
     """
     H, S, tau = float(state[0]), float(state[1]), float(state[2])
     hedgeScale = max(abs(env.Hmin), abs(env.Hmax), 1e-8)

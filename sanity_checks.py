@@ -1,6 +1,5 @@
 import numpy as np
-from envSpec import EnvSpec, makeEnvironment
-from hedgingEnvironment import preprocessState, scaleActionToHedge, scaleHedgeToAction, KAPPASCALE
+from hedgingEnvironment import preprocessState, scaleActionToHedge
 from replayBuffer import ReplayBuffer
 
 def prechecks():

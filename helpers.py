@@ -34,7 +34,7 @@ def blackScholesCallPriceDelta(S: float, K: float, r: float, q: float, sigma: fl
     d2 = d1 - (sigma * sqrt(tau))
     price = S * exp(-q * tau) * N(d1) - K * exp(-r * tau) * N(d2)
     delta = exp(-q * tau) * N(d1)
-    return price, delta
+    return float(price), float(delta)
 
 def nextPriceGBM(Scurr: Union[float, np.ndarray], mu: float, sigma: float, dt: float, rng: np.random.Generator) -> Union[float, np.ndarray]:
     """

@@ -65,7 +65,7 @@ class DDPGAgent:
             explore: if True, add noise for exploration (vs exploitation)
         """
         S = preprocessState(env, stateRaw)
-        St = torch.tensor(S, DEVICE=DEVICE).unsqueeze(0)
+        St = torch.tensor(S, device=DEVICE).unsqueeze(0)
         u = float(self.actor(St).cpu().numpy()[0, 0])
 
         if explore:
@@ -185,7 +185,7 @@ class MeanStdDDPGAgent:
     @torch.no_grad()
     def selectAction(self, env, stateRaw, explore=True):
         s = preprocessState(env, stateRaw)
-        st = torch.tensor(s, DEVICE=DEVICE).unsqueeze(0)
+        st = torch.tensor(s, device=DEVICE).unsqueeze(0)
         u = float(self.actor(st).cpu().numpy()[0, 0])
 
         if explore:
@@ -266,7 +266,7 @@ class MeanStdDDPGAgent:
                 "critic1Loss": float(critic1Loss.item()), "critic2Loss": float(critic2Loss.item())}
     
 
-def trainDDPG(env, agent, episodes=2000, baseSeed=0, logEvery=50, debugFirstEpisode=True, debugSteps=5, reward_scalar=1):
+def trainDDPG(env, agent, episodes=2000, baseSeed=0, logEvery=50.0, debugFirstEpisode=True, debugSteps=5, reward_scalar=1.0):
     """
         Run reinforcement learning episodes to train an agent
         This training loop handles both risk‑neutral and risk‑averse agents
@@ -286,59 +286,41 @@ def trainDDPG(env, agent, episodes=2000, baseSeed=0, logEvery=50, debugFirstEpis
         env = env
         env.rng = np.random.default_rng(baseSeed + ep)
         state, r0 = env.reset()
-        done = False
         episodeReward = float(r0)
-        episodeTransactionCost = 0
+        episodeTransactionCost = 0.0
+        done = False
         stepCount = 0
 
-        sPreInitial = preprocessState(env, state)
-        H0 = agent.selectAction(env, state, explore=True)
-        state, reward0, info0 = env.applyInitialHedge(H0)
-        reward0 /= reward_scalar
-
-        episodeReward += float(reward0)
-        episodeTransactionCost += float(info0.get("TotalTransactionCost", info0.get("TransactionCost", 0)))
-
-        sPostInitial = preprocessState(env, state)
-        u0 = scaleHedgeToAction(env, H0)
-        agent.buffer.add(sPreInitial, np.array([u0], dtype=np.float32), np.array([reward0], dtype=np.float32), sPostInitial, False)
-        agent.totalSteps += 1
-        # Main episode loop
         while not done:
-            # 1) choose hedge (in H-space) using actor + exploration noise
+            sPre = preprocessState(env, state)
+
             Hnext = agent.selectAction(env, state, explore=True)
-
-            # 2) step environment
             nextState, reward, done, info = env.step(Hnext)
-            reward/=reward_scalar  # scale reward if needed (eg. for mean-std agent to keep magnitudes manageable)
+            reward /= reward_scalar
 
-            # 3) preprocess states for NN input
-            s = preprocessState(env, state)
-            s2 = preprocessState(env, nextState)
-
-            # 4) store action in SCALED space u in [-1,1]
+            sPost = preprocessState(env, nextState)
             u = scaleHedgeToAction(env, Hnext)
-            agent.buffer.add(s, np.array([u], dtype=np.float32), np.array([reward], dtype=np.float32), s2, done)
+
+            agent.buffer.add(
+                sPre,
+                np.array([u], dtype=np.float32),
+                np.array([reward], dtype=np.float32),
+                sPost,
+                done,
+            )
             agent.totalSteps += 1
 
-            # 5) train periodically
             if agent.totalSteps % agent.config.trainEvery == 0:
                 losses = agent.trainStep()
-                #print("trainStep output →", losses)
                 if losses is not None:
                     hist["actorLoss"].append(losses["actorLoss"])
                     hist["criticLoss"].append(losses["criticLoss"])
 
-            # 6) accumulate episode stats (every step)
             episodeReward += float(reward)
-            episodeTransactionCost += float(info.get("TransactionCost", 0))
+            episodeTransactionCost += float(info.get("TotalTransactionCost", info.get("TransactionCost", 0)))
 
-            # 7) debug print (first episode only)
-            if debugFirstEpisode and ep == 0 and stepCount < debugSteps:
-                tc = float(info.get("TransactionCost", 0))
-                print(f"step={stepCount} reward={float(reward): .8f} cumReward={episodeReward: .8f} "f"tc={tc: .8f} S={float(env.S): .4f} H={float(env.H): .4f}")
-                stepCount += 1
             state = nextState
+            stepCount += 1
 
         hist["episodeReward"].append(episodeReward)
         hist["episodeTransactionCost"].append(episodeTransactionCost)

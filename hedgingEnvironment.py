@@ -23,10 +23,34 @@ class hedgingEnvironment:
         trnsCostFunc: Optional[Callable[[float], float]] = None,
         deltaCutoff: float = 0.5,
         deltaPenaltyWeight: float = 0.05,
-        deltaPenaltyPower: int = 2,
+        deltaPenaltyPower: float = 2,
         deltaCostFunc: Optional[Callable[[float], float]] = None,
         rng=None,
-    ):
+        ):
+        """
+        Initializes the delta-hedging environment with market parameters, hedge bounds,
+        transaction-cost settings, and delta-penalty settings.
+
+        Args:
+            S0: Initial spot price.
+            K: Option strike price.
+            expiration: Option maturity in years.
+            steps: Number of hedge decisions in the episode.
+            r: Continuously compounded risk-free rate.
+            q: Continuously compounded dividend yield.
+            mu: Drift used in spot simulation.
+            sigma: Volatility used in spot simulation.
+            sigmaValuation: Volatility used for option pricing; if None, uses sigma.
+            options: Number of options being hedged.
+            Hmin: Minimum allowable hedge position; if None, defaults to -options.
+            Hmax: Maximum allowable hedge position; if None, defaults to options.
+            trnsCostFunc: Function mapping traded notional to transaction cost.
+            deltaCutoff: No-penalty band for net delta, expressed per option.
+            deltaPenaltyWeight: Scale applied to the delta penalty.
+            deltaPenaltyPower: Penalty power; 1 for linear, 2 for quadratic.
+            deltaCostFunc: Custom function mapping excess net delta to penalty.
+            rng: Random number generator used for price simulation.
+        """
         maturity: timedelta = timedelta(days=250)
         rebalancingFrequency: timedelta = timedelta(days=5)
         one_day = timedelta(days=1)
@@ -66,7 +90,7 @@ class hedgingEnvironment:
         self.Hmax = float(self.options) if Hmax is None else float(Hmax)
 
         # transaction cost
-        self.defaultTransCost = 0.01
+        self.defaultTransCost = 0.05
         self.transCostFunc = (
             trnsCostFunc
             if trnsCostFunc is not None
@@ -97,21 +121,30 @@ class hedgingEnvironment:
 
     def tau(self):
         """
-        Returns remaining time-to-maturity tau_i = max(T - i*dt, 0).
+        Returns the remaining time to maturity at the current step.
+
+        Returns:
+            Remaining time to maturity in years.
         """
         return max(self.expiration - self.i * self.dt, 0.0)
 
     def stateVector(self):
         """
-        Returns the current observable state as a NumPy array.
-        [H, S, tau]
+        Returns the current observable state vector used by the policy or agent.
+
+        Returns:
+            NumPy array [H, S, tau] containing current hedge position, spot price,
+            and remaining time to maturity.
         """
         return np.array([self.H, self.S, self.tau()], dtype=np.float32)
 
     def reset(self):
         """
-        Resets the episode to time i=0.
-        Returns: (stateVector, initialReward)
+        Resets the environment to the beginning of a new episode.
+
+        Returns:
+            stateVector: Initial observable state [H, S, tau].
+            initialReward: Initial reward at reset, equal to 0.0.
         """
         self.i = 0
         self.S = float(np.asarray(self.S0).item())
@@ -126,8 +159,19 @@ class hedgingEnvironment:
 
     def step(self, Hnext):
         """
-        One environment step.
+        Advances the environment by one step using the requested next hedge position.
+
+        Args:
+            Hnext: Target hedge position for the next step.
+
+        Returns:
+            nextState: Next observable state [H, S, tau].
+            reward: One-step reward after price move, hedge PnL, costs, and penalties.
+            done: True if the episode has reached maturity, otherwise False.
+            info: Dictionary containing transaction cost, delta penalty, net delta,
+                traded amount, and other step diagnostics.
         """
+
         if self.Hmin is not None and self.Hmax is not None:
             Hnext = float(np.clip(Hnext, self.Hmin, self.Hmax))
 
@@ -184,7 +228,10 @@ class hedgingEnvironment:
 
     def seed(self, seed=None):
         """
-        Sets/overwrites the environment RNG.
+        Sets or overwrites the environment RNG.
+
+        Args:
+            seed: Integer seed or NumPy Generator; if None, leaves the RNG unchanged.
         """
         if seed is None:
             return
@@ -200,8 +247,15 @@ class hedgingEnvironment:
 ### BASELINE TRADING POLICIES ###
 def unpackState(state):
     """
-    State is [H, S, tau].
-    Returns: (H, S, tau)
+    Unpacks a raw state vector into its individual components.
+
+    Args:
+        state: NumPy array or sequence [H, S, tau].
+
+    Returns:
+        H: Current hedge position.
+        S: Current spot price.
+        tau: Remaining time to maturity.
     """
     H, S, tau = float(state[0]), float(state[1]), float(state[2])
     return H, S, tau
@@ -209,7 +263,14 @@ def unpackState(state):
 
 def policyDeltaHedge(env, state):
     """
-    Practitioner delta hedge: Htarget = options * DeltaCall(S, tau)
+    Computes the Black-Scholes delta hedge target for the current state.
+
+    Args:
+        env: Hedging environment containing contract and model parameters.
+        state: Current observable state [H, S, tau].
+
+    Returns:
+        Target hedge position clipped to the environment's hedge bounds.
     """
     _, S, tau = unpackState(state)
     _, delta = blackScholesCallPriceDelta(S, env.K, env.r, env.q, env.sigmaValuation, tau)
@@ -219,7 +280,13 @@ def policyDeltaHedge(env, state):
 
 def policyDeltaHedgeWithBand(band=0.25):
     """
-    Delta hedge with an inaction band.
+    Builds a delta-hedging policy with an inaction band around the target hedge.
+
+    Args:
+        band: Maximum allowed deviation from the target hedge before rebalancing.
+
+    Returns:
+        Policy function mapping (env, state) to the next hedge position.
     """
     def policy(env, state):
         Hcurr, S, tau = unpackState(state)
@@ -234,14 +301,31 @@ def policyDeltaHedgeWithBand(band=0.25):
 
 def policyNoTrading(env, state):
     """
-    No-trade policy: keep the current hedge position.
+    Returns the current hedge position without making any trade.
+
+    Args:
+        env: Hedging environment.
+        state: Current observable state [H, S, tau].
+
+    Returns:
+        Current hedge position.
     """
     return float(state[0])
 
 
-def runEpisode(env, policyFunction, seed=0, reward_scaling_factor=1):
+def runEpisode(env: hedgingEnvironment, policyFunction, seed=0, reward_scaling_factor=1):
     """
-    Runs one episode and returns summary bookkeeping.
+    Runs one full hedging episode under a given policy and records summary metrics.
+
+    Args:
+        env: Hedging environment.
+        policyFunction: Function mapping (env, state) to next hedge position.
+        seed: Random seed used to initialize the episode RNG.
+        reward_scaling_factor: Multiplier applied to each step reward before aggregation.
+
+    Returns:
+        Dictionary containing total reward, terminal turnover, total turnover,
+        and total transaction cost for the episode.
     """
     env.rng = np.random.default_rng(seed)
     state, r0 = env.reset()
@@ -280,7 +364,19 @@ def runEpisode(env, policyFunction, seed=0, reward_scaling_factor=1):
 ### POLICY EVALUATION ###
 def evaluatePolicy(env, policyFunction, episodes=300, c=1.5, baseSeed=0):
     """
-    Evaluate a policy over many episodes and return summary statistics.
+    Evaluates a policy over multiple episodes and computes summary performance statistics.
+
+    Args:
+        env: Hedging environment.
+        policyFunction: Function mapping (env, state) to next hedge position.
+        episodes: Number of evaluation episodes.
+        c: Risk-aversion coefficient used in the Y = mean + c * std metric.
+        baseSeed: Starting seed; each episode uses baseSeed + episode index.
+
+    Returns:
+        summary: Dictionary containing mean cost, standard deviation of cost,
+            risk-adjusted metric, mean transaction cost, and mean turnover.
+        df: DataFrame with one row per episode.
     """
     rows = []
 
@@ -308,13 +404,14 @@ def evaluatePolicy(env, policyFunction, episodes=300, c=1.5, baseSeed=0):
 
 def preprocessState(env, state):
     """
-    Normalize the raw state for neural network input.
+    Normalizes the raw state vector for neural-network input.
 
-    Raw state: [H, S, tau]
-    Return normalized features:
-        H -> scaled by max(|Hmin|,|Hmax|)
-        S -> x = log(S/K)
-        tau -> scaled time-to-maturity: tau / expiration
+    Args:
+        env: Hedging environment containing scaling parameters.
+        state: Raw observable state [H, S, tau].
+
+    Returns:
+        NumPy array [normalizedH, logMoneyness, normalizedTau].
     """
     H, S, tau = float(state[0]), float(state[1]), float(state[2])
     hedgeScale = max(abs(env.Hmin), abs(env.Hmax), 1e-8)
@@ -326,7 +423,14 @@ def preprocessState(env, state):
 
 def scaleActionToHedge(env, u):
     """
-    Maps actor's scaled action u in [-1,1] -> hedge position H in [Hmin, Hmax]
+    Maps a scaled action in [-1, 1] to a hedge position in [Hmin, Hmax].
+
+    Args:
+        env: Hedging environment containing hedge bounds.
+        u: Scaled action value.
+
+    Returns:
+        Hedge position corresponding to the scaled action.
     """
     u = float(np.clip(u, -1, 1))
     H = 0.5 * (u + 1.0) * (env.Hmax - env.Hmin) + env.Hmin
@@ -335,7 +439,14 @@ def scaleActionToHedge(env, u):
 
 def scaleHedgeToAction(env, H):
     """
-    Maps hedge position H in [Hmin, Hmax] -> scaled action u in [-1,1]
+    Maps a hedge position in [Hmin, Hmax] to a scaled action in [-1, 1].
+
+    Args:
+        env: Hedging environment containing hedge bounds.
+        H: Hedge position.
+
+    Returns:
+        Scaled action corresponding to the hedge position.
     """
     H = float(np.clip(H, env.Hmin, env.Hmax))
     u = 2.0 * (H - env.Hmin) / (env.Hmax - env.Hmin) - 1.0
